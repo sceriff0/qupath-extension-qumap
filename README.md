@@ -28,9 +28,9 @@ Part of the [FlowPath extension suite](https://github.com/sceriff0/flowpath-cata
 
 ### From QuPath Extension Manager
 
-1. Open QuPath > `Extensions` > `Manage extensions` > `Manage extension catalogs` > `Add`
+1. Open QuPath → `Extensions` → `Manage extensions` → `Manage extension catalogs` → `Add`
 2. Paste: `https://raw.githubusercontent.com/sceriff0/flowpath-catalog/main/catalog.json`
-3. Go back to `Manage extensions` > find **FlowPath - qUMAP** > click `+` to install
+3. Go back to `Manage extensions` → find **FlowPath - qUMAP** → click `+` to install
 4. Restart QuPath
 
 ### From Release JAR
@@ -59,7 +59,7 @@ cd qupath-extension-qumap
 9. Cells outside turn gray (UNFOCUSED). Enter a name + pick a color > **Apply Tag** to permanently mark the selection
 10. **Export CSV** to save UMAP coordinates with phenotype labels
 
-## Output Format
+## Output Formats
 
 **UMAP CSV** (`umap_coordinates.csv`) — One row per cell:
 
