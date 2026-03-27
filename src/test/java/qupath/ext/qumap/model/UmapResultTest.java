@@ -166,4 +166,63 @@ class UmapResultTest {
 
         assertEquals(3, result.size());
     }
+
+    @Test
+    void constructorRejectsNullArrays() {
+        assertThrows(NullPointerException.class, () ->
+            new UmapResult(null, new double[]{1}, new PathObject[1], new String[]{}, UmapParameters.defaults()));
+        assertThrows(NullPointerException.class, () ->
+            new UmapResult(new double[]{1}, null, new PathObject[1], new String[]{}, UmapParameters.defaults()));
+        assertThrows(NullPointerException.class, () ->
+            new UmapResult(new double[]{1}, new double[]{1}, null, new String[]{}, UmapParameters.defaults()));
+        assertThrows(NullPointerException.class, () ->
+            new UmapResult(new double[]{1}, new double[]{1}, new PathObject[1], null, UmapParameters.defaults()));
+    }
+
+    @Test
+    void gettersReturnDefensiveCopies() {
+        var obj = createCell("A", 1.0);
+        var result = new UmapResult(
+                new double[]{1.0}, new double[]{2.0},
+                new PathObject[]{obj}, new String[]{"CD45"},
+                UmapParameters.defaults());
+
+        // Mutate returned arrays
+        result.getUmapX()[0] = 999.0;
+        result.getUmapY()[0] = 999.0;
+        result.getObjects()[0] = null;
+        result.getMarkerNames()[0] = "HACKED";
+
+        // Verify internal state unchanged
+        assertEquals(1.0, result.getUmapX()[0]);
+        assertEquals(2.0, result.getUmapY()[0]);
+        assertSame(obj, result.getObjects()[0]);
+        assertEquals("CD45", result.getMarkerNames()[0]);
+    }
+
+    @Test
+    void exportRejectsMismatchedCellIndex() {
+        var obj1 = createCell("A", 1.0);
+        var obj2 = createCell("B", 2.0);
+        var cells = List.of(obj1, obj2);
+        var markers = List.of("CD45");
+        var index = buildIndex(cells, markers);
+
+        // UmapResult has 1 cell, CellIndex has 2
+        var result = new UmapResult(
+                new double[]{0.0}, new double[]{0.0},
+                new PathObject[]{obj1}, new String[]{"CD45"},
+                UmapParameters.defaults());
+
+        File temp;
+        try {
+            temp = File.createTempFile("umap", ".csv");
+            temp.deleteOnExit();
+        } catch (IOException e) {
+            fail("Could not create temp file");
+            return;
+        }
+        assertThrows(IllegalArgumentException.class, () ->
+            result.exportToCsv(temp, index, null, null));
+    }
 }

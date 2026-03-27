@@ -1,6 +1,6 @@
 package qupath.ext.qumap.model;
 
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -70,7 +70,7 @@ public class MarkerStats {
                 double d = v - mean;
                 sumSq += d * d;
             }
-            double std = count > 0 ? Math.sqrt(sumSq / count) : 0.0;
+            double std = count > 1 ? Math.sqrt(sumSq / (count - 1)) : 0.0;
 
             means.put(name, mean);
             stds.put(name, std);
@@ -92,5 +92,5 @@ public class MarkerStats {
     public double getStd(String channel) { return stds.getOrDefault(channel, 0.0); }
     public double getMin(String channel) { return mins.getOrDefault(channel, 0.0); }
     public double getMax(String channel) { return maxs.getOrDefault(channel, 0.0); }
-    public Set<String> getMarkerNames() { return means.keySet(); }
+    public Set<String> getMarkerNames() { return Collections.unmodifiableSet(means.keySet()); }
 }

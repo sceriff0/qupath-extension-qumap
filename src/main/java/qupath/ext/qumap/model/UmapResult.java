@@ -8,6 +8,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 /**
  * Immutable result of a UMAP computation.
@@ -23,6 +24,10 @@ public class UmapResult {
 
     public UmapResult(double[] umapX, double[] umapY, PathObject[] objects,
                       String[] markerNames, UmapParameters params) {
+        Objects.requireNonNull(umapX, "umapX");
+        Objects.requireNonNull(umapY, "umapY");
+        Objects.requireNonNull(objects, "objects");
+        Objects.requireNonNull(markerNames, "markerNames");
         if (umapX.length != umapY.length || umapX.length != objects.length) {
             throw new IllegalArgumentException(
                     "Array length mismatch: umapX=%d, umapY=%d, objects=%d"
@@ -35,10 +40,10 @@ public class UmapResult {
         this.params = params;
     }
 
-    public double[] getUmapX() { return umapX; }
-    public double[] getUmapY() { return umapY; }
-    public PathObject[] getObjects() { return objects; }
-    public String[] getMarkerNames() { return markerNames; }
+    public double[] getUmapX() { return umapX.clone(); }
+    public double[] getUmapY() { return umapY.clone(); }
+    public PathObject[] getObjects() { return objects.clone(); }
+    public String[] getMarkerNames() { return markerNames.clone(); }
     public UmapParameters getParams() { return params; }
     public int size() { return umapX.length; }
 
@@ -59,6 +64,11 @@ public class UmapResult {
      */
     public void exportToCsv(File file, CellIndex cellIndex, MarkerStats markerStats,
                             List<PopulationTag> populationTags) throws IOException {
+        if (cellIndex.size() != umapX.length) {
+            throw new IllegalArgumentException(
+                    "CellIndex size %d does not match UmapResult size %d"
+                            .formatted(cellIndex.size(), umapX.length));
+        }
         boolean hasTags = populationTags != null && !populationTags.isEmpty();
         String[] markers = cellIndex.getMarkerNames();
 

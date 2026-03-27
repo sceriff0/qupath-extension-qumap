@@ -1,5 +1,6 @@
 package qupath.ext.qumap.ui;
 
+import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 
 import java.util.ArrayList;
@@ -50,7 +51,7 @@ public class PolygonSelector {
     }
 
     private void handleClick(MouseEvent e) {
-        if (!active) return;
+        if (!active || e.getButton() != MouseButton.PRIMARY) return;
 
         if (e.getClickCount() == 2) {
             // Remove the spurious vertex added by the preceding single-click event

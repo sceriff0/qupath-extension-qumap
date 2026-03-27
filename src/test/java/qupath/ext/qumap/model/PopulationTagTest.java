@@ -38,4 +38,20 @@ class PopulationTagTest {
         assertEquals(0xABCDEF, tag.color());
         assertEquals(1, tag.mask().length);
     }
+
+    @Test
+    void maskDefensivelyCopiedOnConstruction() {
+        boolean[] original = {true, false, true};
+        var tag = new PopulationTag("Test", 0xFF0000, original);
+        original[0] = false; // mutate original
+        assertEquals(2, tag.count(), "Mutation of original array should not affect tag");
+    }
+
+    @Test
+    void maskGetterReturnsDefensiveCopy() {
+        var tag = new PopulationTag("Test", 0xFF0000, new boolean[]{true, true, true});
+        boolean[] retrieved = tag.mask();
+        retrieved[0] = false; // mutate retrieved copy
+        assertEquals(3, tag.count(), "Mutation of returned array should not affect tag");
+    }
 }

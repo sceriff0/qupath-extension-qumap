@@ -205,11 +205,13 @@ public class UmapCanvas extends Canvas {
 
     public double screenXToDataX(double screenX) {
         double plotW = getWidth() - PADDING_LEFT - PADDING_RIGHT;
+        if (plotW <= 0) return effectiveMinX();
         return effectiveMinX() + ((screenX - PADDING_LEFT) / plotW) * (effectiveMaxX() - effectiveMinX());
     }
 
     public double screenYToDataY(double screenY) {
         double plotH = getHeight() - PADDING_TOP - PADDING_BOTTOM;
+        if (plotH <= 0) return effectiveMinY();
         return effectiveMinY() + ((PADDING_TOP + plotH - screenY) / plotH) * (effectiveMaxY() - effectiveMinY());
     }
 

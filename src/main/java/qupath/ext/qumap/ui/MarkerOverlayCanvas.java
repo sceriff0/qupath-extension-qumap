@@ -65,6 +65,8 @@ public class MarkerOverlayCanvas extends Canvas {
                     dataMaxY = Math.max(dataMaxY, yValues[i]);
                 }
             }
+            if (dataMaxX <= dataMinX) dataMaxX = dataMinX + 1;
+            if (dataMaxY <= dataMinY) dataMaxY = dataMinY + 1;
             double padX = (dataMaxX - dataMinX) * 0.05;
             double padY = (dataMaxY - dataMinY) * 0.05;
             dataMinX -= padX; dataMaxX += padX;

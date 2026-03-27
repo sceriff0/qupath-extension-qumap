@@ -128,7 +128,7 @@ public class CellIndex {
         return matrix;
     }
 
-    public double[] getMarkerValues(int markerIndex) { return values[markerIndex]; }
+    public double[] getMarkerValues(int markerIndex) { return values[markerIndex].clone(); }
     public int getMarkerIndex(String name) {
         for (int i = 0; i < markerNames.length; i++) {
             if (markerNames[i].equals(name)) return i;
@@ -137,8 +137,8 @@ public class CellIndex {
     }
 
     public PathObject getObject(int cellIndex) { return objects[cellIndex]; }
-    public PathObject[] getObjects() { return objects; }
-    public String[] getMarkerNames() { return markerNames; }
+    public PathObject[] getObjects() { return objects.clone(); }
+    public String[] getMarkerNames() { return markerNames.clone(); }
     public double getCentroidX(int i) { return centroidX[i]; }
     public double getCentroidY(int i) { return centroidY[i]; }
     public int size() { return size; }

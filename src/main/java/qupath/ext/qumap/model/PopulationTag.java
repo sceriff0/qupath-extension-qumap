@@ -9,6 +9,15 @@ package qupath.ext.qumap.model;
  */
 public record PopulationTag(String name, int color, boolean[] mask) {
 
+    public PopulationTag {
+        mask = mask.clone();
+    }
+
+    @Override
+    public boolean[] mask() {
+        return mask.clone();
+    }
+
     public int count() {
         int c = 0;
         for (boolean b : mask) if (b) c++;

@@ -63,4 +63,26 @@ class PointInPolygonTest {
         assertTrue(UmapCanvas.pointInPolygon(2, 8, lShape));   // inside upper left
         assertFalse(UmapCanvas.pointInPolygon(8, 8, lShape));  // outside upper right (the concavity)
     }
+
+    @Test
+    void emptyVertexList() {
+        assertFalse(UmapCanvas.pointInPolygon(5, 5, List.of()));
+    }
+
+    @Test
+    void nanCoordinatesReturnFalse() {
+        assertFalse(UmapCanvas.pointInPolygon(Double.NaN, 5, SQUARE));
+        assertFalse(UmapCanvas.pointInPolygon(5, Double.NaN, SQUARE));
+        assertFalse(UmapCanvas.pointInPolygon(Double.NaN, Double.NaN, SQUARE));
+    }
+
+    @Test
+    void largeCoordinates() {
+        List<double[]> bigSquare = List.of(
+                new double[]{0, 0}, new double[]{1e15, 0},
+                new double[]{1e15, 1e15}, new double[]{0, 1e15}
+        );
+        assertTrue(UmapCanvas.pointInPolygon(5e14, 5e14, bigSquare));
+        assertFalse(UmapCanvas.pointInPolygon(2e15, 5e14, bigSquare));
+    }
 }

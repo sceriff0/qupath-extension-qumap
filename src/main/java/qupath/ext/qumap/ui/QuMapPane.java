@@ -234,6 +234,7 @@ public class QuMapPane extends BorderPane {
     // --- Initialization ---
 
     private void initializeFromImage() {
+        computeService.cancel();
         umapResult = null;
         cellIndex = null;
         markerStats = null;
@@ -245,6 +246,7 @@ public class QuMapPane extends BorderPane {
         colorScaleLegend.clear();
 
         // Disable gating/export controls until UMAP is recomputed
+        computeButton.setDisable(true);
         drawButton.setDisable(true);
         clearButton.setDisable(true);
         tagNameField.setDisable(true);
@@ -252,6 +254,7 @@ public class QuMapPane extends BorderPane {
         applyTagButton.setDisable(true);
         exportButton.setDisable(true);
         drawButton.setSelected(false);
+        progressIndicator.setVisible(false);
 
         ImageData<?> imageData = qupath.getImageData();
         if (imageData == null) {
@@ -272,17 +275,30 @@ public class QuMapPane extends BorderPane {
             return;
         }
 
-        cellIndex = CellIndex.build(detections, markers);
-        markerStats = MarkerStats.compute(cellIndex);
+        statusLabel.setText("Building cell index...");
 
-        // Populate marker dropdown
-        markerDropdown.getItems().clear();
-        markerDropdown.getItems().add("-- none --");
-        markerDropdown.getItems().addAll(markers);
-        markerDropdown.setValue("-- none --");
+        // Build CellIndex and MarkerStats off the FX thread
+        var detectionsCopy = new ArrayList<>(detections);
+        var markersCopy = List.copyOf(markers);
+        Thread bgThread = new Thread(() -> {
+            CellIndex builtIndex = CellIndex.build(detectionsCopy, markersCopy);
+            MarkerStats builtStats = MarkerStats.compute(builtIndex);
+            Platform.runLater(() -> {
+                cellIndex = builtIndex;
+                markerStats = builtStats;
+                computeButton.setDisable(false);
 
-        statusLabel.setText(String.format("%,d cells, %d markers. Ready to compute UMAP.",
-                cellIndex.size(), markers.size()));
+                markerDropdown.getItems().clear();
+                markerDropdown.getItems().add("-- none --");
+                markerDropdown.getItems().addAll(markersCopy);
+                markerDropdown.setValue("-- none --");
+
+                statusLabel.setText(String.format("%,d cells, %d markers. Ready to compute UMAP.",
+                        builtIndex.size(), markersCopy.size()));
+            });
+        }, "qumap-init");
+        bgThread.setDaemon(true);
+        bgThread.start();
     }
 
     private List<String> discoverMarkerNames(ImageData<?> imageData, Collection<PathObject> detections) {

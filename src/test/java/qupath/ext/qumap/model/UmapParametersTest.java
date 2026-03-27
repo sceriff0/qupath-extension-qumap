@@ -25,4 +25,38 @@ class UmapParametersTest {
         assertEquals(2.0, params.spread(), 0.001);
         assertEquals(500, params.epochs());
     }
+
+    @Test
+    void kMustBePositive() {
+        assertThrows(IllegalArgumentException.class, () -> new UmapParameters(0, 0.1, 1.0, 200));
+        assertThrows(IllegalArgumentException.class, () -> new UmapParameters(-1, 0.1, 1.0, 200));
+    }
+
+    @Test
+    void minDistMustBePositive() {
+        assertThrows(IllegalArgumentException.class, () -> new UmapParameters(15, 0.0, 1.0, 200));
+        assertThrows(IllegalArgumentException.class, () -> new UmapParameters(15, -0.1, 1.0, 200));
+    }
+
+    @Test
+    void spreadMustBePositive() {
+        assertThrows(IllegalArgumentException.class, () -> new UmapParameters(15, 0.1, 0.0, 200));
+    }
+
+    @Test
+    void minDistMustNotExceedSpread() {
+        assertThrows(IllegalArgumentException.class, () -> new UmapParameters(15, 2.0, 1.0, 200));
+    }
+
+    @Test
+    void epochsMustBePositive() {
+        assertThrows(IllegalArgumentException.class, () -> new UmapParameters(15, 0.1, 1.0, 0));
+        assertThrows(IllegalArgumentException.class, () -> new UmapParameters(15, 0.1, 1.0, -10));
+    }
+
+    @Test
+    void boundaryValuesAccepted() {
+        assertDoesNotThrow(() -> new UmapParameters(1, 0.001, 0.001, 1));
+        assertDoesNotThrow(() -> new UmapParameters(15, 1.0, 1.0, 200)); // minDist == spread
+    }
 }

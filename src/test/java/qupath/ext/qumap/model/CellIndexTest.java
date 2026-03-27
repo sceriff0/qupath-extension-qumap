@@ -163,4 +163,48 @@ class CellIndexTest {
         assertEquals("CD45", names[0]);
         assertEquals("CD3", names[1]);
     }
+
+    @Test
+    void getMarkerValuesReturnsDefensiveCopy() {
+        var c = createCell();
+        c.getMeasurements().put("CD45", 5.0);
+        var index = CellIndex.build(List.of(c), List.of("CD45"));
+
+        double[] values = index.getMarkerValues(0);
+        values[0] = 999.0; // mutate
+        assertEquals(5.0, index.getMarkerValues(0)[0], "Mutation should not affect internal state");
+    }
+
+    @Test
+    void getObjectsReturnsDefensiveCopy() {
+        var c1 = createCell();
+        var c2 = createCell();
+        var index = CellIndex.build(List.of(c1, c2), List.of());
+
+        PathObject[] objects = index.getObjects();
+        objects[0] = null; // mutate
+        assertSame(c1, index.getObject(0), "Mutation should not affect internal state");
+    }
+
+    @Test
+    void getMarkerNamesReturnsDefensiveCopy() {
+        var c = createCell();
+        c.getMeasurements().put("CD45", 1.0);
+        var index = CellIndex.build(List.of(c), List.of("CD45"));
+
+        String[] names = index.getMarkerNames();
+        names[0] = "HACKED";
+        assertEquals("CD45", index.getMarkerNames()[0], "Mutation should not affect internal state");
+    }
+
+    @Test
+    void missingCentroidReturnsNaN() {
+        var c = createCell();
+        // No Centroid X/Y measurements
+        c.getMeasurements().put("CD45", 1.0);
+        var index = CellIndex.build(List.of(c), List.of("CD45"));
+
+        assertTrue(Double.isNaN(index.getCentroidX(0)), "Missing centroid X should be NaN");
+        assertTrue(Double.isNaN(index.getCentroidY(0)), "Missing centroid Y should be NaN");
+    }
 }

@@ -115,10 +115,13 @@ public class UmapComputeService {
                     }
                 }
 
+                if (Thread.currentThread().isInterrupted()) return;
+
                 UmapResult result = new UmapResult(umapX, umapY, cellIndex.getObjects(),
                         cellIndex.getMarkerNames(), params);
                 cachedResult = result;
 
+                if (Thread.currentThread().isInterrupted()) return;
                 Platform.runLater(() -> {
                     if (onComplete != null) onComplete.accept(result);
                 });
@@ -223,7 +226,8 @@ public class UmapComputeService {
                                   double[] umapX, double[] umapY) {
         int n = cellIndex.size();
         int m = cellIndex.getMarkerNames().length;
-        int knn = 5;
+        int knn = Math.min(5, sampleIndices.length);
+        if (knn == 0) return;
 
         boolean[] isSampled = new boolean[n];
         for (int idx : sampleIndices) isSampled[idx] = true;
@@ -308,5 +312,8 @@ public class UmapComputeService {
     public void shutdown() {
         cancel();
         executor.shutdownNow();
+        onComplete = null;
+        onError = null;
+        onStatusUpdate = null;
     }
 }
