@@ -16,8 +16,10 @@ build/
 Thumbs.db
 
 # Claude
+CLAUDE.md
 .claude
 .planning
+.citadel
 
 # Files
 ARCHITECTURE.md

@@ -3,6 +3,7 @@ package qupath.ext.qumap.ui;
 import javafx.geometry.Insets;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -103,6 +104,7 @@ public class PhenotypeLegend extends ScrollPane {
 
                 var row = new HBox(4, ring, label);
                 row.setPadding(new Insets(1, 0, 1, 2));
+                Tooltip.install(row, new Tooltip("Right-click to remove"));
 
                 // Right-click to remove
                 row.setOnContextMenuRequested(e -> {

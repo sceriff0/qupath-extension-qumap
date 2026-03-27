@@ -23,9 +23,9 @@ public class UmapComputeService {
     private volatile UmapResult cachedResult;
     private volatile Future<?> runningTask;
 
-    private Consumer<UmapResult> onComplete;
-    private Consumer<String> onError;
-    private Consumer<String> onStatusUpdate;
+    private volatile Consumer<UmapResult> onComplete;
+    private volatile Consumer<String> onError;
+    private volatile Consumer<String> onStatusUpdate;
 
     public UmapComputeService() {
         this.executor = Executors.newSingleThreadExecutor(r -> {
@@ -228,12 +228,24 @@ public class UmapComputeService {
         boolean[] isSampled = new boolean[n];
         for (int idx : sampleIndices) isSampled[idx] = true;
 
-        // Build sample marker matrix for kNN lookup
+        // Compute per-marker means for NaN imputation
+        double[] markerMeans = new double[m];
+        for (int j = 0; j < m; j++) {
+            double[] vals = cellIndex.getMarkerValues(j);
+            double sum = 0; int cnt = 0;
+            for (double v : vals) {
+                if (!Double.isNaN(v)) { sum += v; cnt++; }
+            }
+            markerMeans[j] = cnt > 0 ? sum / cnt : 0.0;
+        }
+
+        // Build sample marker matrix for kNN lookup (with NaN imputation)
         double[][] sampleMarkers = new double[sampleIndices.length][m];
         for (int j = 0; j < m; j++) {
             double[] vals = cellIndex.getMarkerValues(j);
             for (int s = 0; s < sampleIndices.length; s++) {
-                sampleMarkers[s][j] = vals[sampleIndices[s]];
+                double v = vals[sampleIndices[s]];
+                sampleMarkers[s][j] = Double.isNaN(v) ? markerMeans[j] : v;
             }
         }
 
@@ -248,7 +260,9 @@ public class UmapComputeService {
             for (int s = 0; s < sampleIndices.length; s++) {
                 double dist = 0;
                 for (int j = 0; j < m; j++) {
-                    double d = cellIndex.getMarkerValues(j)[i] - sampleMarkers[s][j];
+                    double raw = cellIndex.getMarkerValues(j)[i];
+                    double val = Double.isNaN(raw) ? markerMeans[j] : raw;
+                    double d = val - sampleMarkers[s][j];
                     dist += d * d;
                 }
 

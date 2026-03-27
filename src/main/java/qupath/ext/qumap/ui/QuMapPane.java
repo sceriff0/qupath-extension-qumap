@@ -59,6 +59,7 @@ public class QuMapPane extends BorderPane {
     private final ToggleButton drawButton;
     private final Button clearButton;
     private final Button applyTagButton;
+    private final Button exportButton;
 
     // Marker overlay visibility
     private final SplitPane centerSplit;
@@ -139,8 +140,16 @@ public class QuMapPane extends BorderPane {
         applyTagButton = new Button("Apply Tag");
         applyTagButton.setOnAction(e -> applyPopulationTag());
 
-        var exportButton = new Button("Export CSV");
+        exportButton = new Button("Export CSV");
         exportButton.setOnAction(e -> exportCsv());
+
+        // Disable gating/tag/export controls until UMAP is computed
+        drawButton.setDisable(true);
+        clearButton.setDisable(true);
+        tagNameField.setDisable(true);
+        tagColorPicker.setDisable(true);
+        applyTagButton.setDisable(true);
+        exportButton.setDisable(true);
 
         // --- Layout ---
 
@@ -207,6 +216,8 @@ public class QuMapPane extends BorderPane {
                     if (polygonSelector.isActive()) {
                         polygonSelector.deactivate();
                         drawButton.setSelected(false);
+                    } else if (originalClasses != null) {
+                        clearPolygon();
                     }
                 }
                 case E -> {
@@ -232,6 +243,15 @@ public class QuMapPane extends BorderPane {
         markerOverlay.setData(null, null);
         legend.update(null, null);
         colorScaleLegend.clear();
+
+        // Disable gating/export controls until UMAP is recomputed
+        drawButton.setDisable(true);
+        clearButton.setDisable(true);
+        tagNameField.setDisable(true);
+        tagColorPicker.setDisable(true);
+        applyTagButton.setDisable(true);
+        exportButton.setDisable(true);
+        drawButton.setSelected(false);
 
         ImageData<?> imageData = qupath.getImageData();
         if (imageData == null) {
@@ -273,23 +293,28 @@ public class QuMapPane extends BorderPane {
             candidates.add(ch.getName());
         }
 
-        // Validate against actual measurements
+        // Validate against actual measurements (sample up to 20 cells to avoid outlier bias)
         if (!candidates.isEmpty() && !detections.isEmpty()) {
-            var sample = detections.iterator().next();
-            var measurements = sample.getMeasurements();
-            if (measurements != null) {
-                candidates.removeIf(name -> {
-                    if (measurements.containsKey(name)) return false;
-                    // Check layer-prefixed
-                    for (String key : measurements.keySet()) {
-                        if (key.endsWith("] " + name)) return false;
-                    }
-                    return true;
-                });
+            Set<String> allKeys = new HashSet<>();
+            int sampled = 0;
+            for (PathObject obj : detections) {
+                var measurements = obj.getMeasurements();
+                if (measurements != null) {
+                    allKeys.addAll(measurements.keySet());
+                }
+                if (++sampled >= 20) break;
             }
+            candidates.removeIf(name -> {
+                if (allKeys.contains(name)) return false;
+                // Check layer-prefixed
+                for (String key : allKeys) {
+                    if (key.endsWith("] " + name)) return false;
+                }
+                return true;
+            });
         }
 
-        // Fallback: from measurements directly
+        // Fallback: from measurements directly (sample up to 20 cells)
         if (candidates.isEmpty() && !detections.isEmpty()) {
             Set<String> exclude = Set.of(
                     "Centroid X", "Centroid Y", "Centroid X µm", "Centroid Y µm",
@@ -297,16 +322,21 @@ public class QuMapPane extends BorderPane {
                     "axis_major_length", "axis_minor_length", "solidity",
                     "x", "y", "label", "fov", "cell_size"
             );
-            var sample = detections.iterator().next();
-            var measurements = sample.getMeasurements();
-            if (measurements != null) {
-                for (String key : measurements.keySet()) {
-                    boolean skip = false;
-                    for (String ex : exclude) {
-                        if (key.equalsIgnoreCase(ex) || key.startsWith(ex)) { skip = true; break; }
-                    }
-                    if (!skip) candidates.add(key);
+            Set<String> allKeys = new LinkedHashSet<>();
+            int sampled = 0;
+            for (PathObject obj : detections) {
+                var measurements = obj.getMeasurements();
+                if (measurements != null) {
+                    allKeys.addAll(measurements.keySet());
                 }
+                if (++sampled >= 20) break;
+            }
+            for (String key : allKeys) {
+                boolean skip = false;
+                for (String ex : exclude) {
+                    if (key.equalsIgnoreCase(ex) || key.startsWith(ex)) { skip = true; break; }
+                }
+                if (!skip) candidates.add(key);
             }
         }
 
@@ -315,11 +345,25 @@ public class QuMapPane extends BorderPane {
 
     // --- UMAP Computation ---
 
+    private <T> void commitSpinner(Spinner<T> spinner) {
+        if (spinner.isEditable()) {
+            String text = spinner.getEditor().getText();
+            spinner.getValueFactory().setValue(
+                    spinner.getValueFactory().getConverter().fromString(text));
+        }
+    }
+
     private void runUmap() {
         if (cellIndex == null) {
             statusLabel.setText("No cell data available");
             return;
         }
+
+        // Force-commit editable spinner values (JavaFX only commits on Enter/focus-loss)
+        commitSpinner(kSpinner);
+        commitSpinner(epochsSpinner);
+        commitSpinner(maxCellsSpinner);
+        commitSpinner(dotSizeSpinner);
 
         UmapParameters params = new UmapParameters(
                 kSpinner.getValue(),
@@ -355,6 +399,14 @@ public class QuMapPane extends BorderPane {
         this.umapResult = result;
         computeButton.setDisable(false);
         progressIndicator.setVisible(false);
+
+        // Enable gating and export controls
+        drawButton.setDisable(false);
+        clearButton.setDisable(false);
+        tagNameField.setDisable(false);
+        tagColorPicker.setDisable(false);
+        applyTagButton.setDisable(false);
+        exportButton.setDisable(false);
 
         umapCanvas.setData(result.getUmapX(), result.getUmapY());
         markerOverlay.setData(result.getUmapX(), result.getUmapY());
@@ -450,9 +502,7 @@ public class QuMapPane extends BorderPane {
         if (originalClasses != null && umapResult != null) {
             PathObject[] objects = umapResult.getObjects();
             for (int i = 0; i < objects.length; i++) {
-                if (originalClasses[i] != null) {
-                    objects[i].setPathClass(originalClasses[i]);
-                }
+                objects[i].setPathClass(originalClasses[i]);
             }
             originalClasses = null;
 
@@ -475,7 +525,7 @@ public class QuMapPane extends BorderPane {
     // --- Population Tagging ---
 
     private void applyPopulationTag() {
-        if (umapResult == null || polygonSelector.getVertices().size() < 3) {
+        if (umapResult == null || originalClasses == null) {
             statusLabel.setText("Draw a polygon first to select cells");
             return;
         }
@@ -483,6 +533,12 @@ public class QuMapPane extends BorderPane {
         String name = tagNameField.getText().trim();
         if (name.isEmpty()) {
             statusLabel.setText("Enter a population name");
+            tagNameField.setStyle("-fx-border-color: #ff4444;");
+            tagNameField.requestFocus();
+            // Reset border after 2 seconds
+            var timer = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(2));
+            timer.setOnFinished(ev -> tagNameField.setStyle(""));
+            timer.play();
             return;
         }
 
@@ -491,21 +547,26 @@ public class QuMapPane extends BorderPane {
                 | ((int) (color.getGreen() * 255) << 8)
                 | (int) (color.getBlue() * 255);
 
-        boolean[] insideMask = polygonSelector.computeInsideMask(
-                umapResult.getUmapX(), umapResult.getUmapY());
-
-        // Apply derived PathClass to cells inside the polygon
+        // Derive inside mask from UNFOCUSED state (polygon vertices are already cleared)
         PathObject[] objects = umapResult.getObjects();
+        boolean[] insideMask = new boolean[objects.length];
+        for (int i = 0; i < objects.length; i++) {
+            PathClass pc = objects[i].getPathClass();
+            insideMask[i] = pc == null || !"UNFOCUSED".equals(pc.getName());
+        }
+
+        // Apply derived PathClass to cells inside the polygon, preserving phenotype color
         for (int i = 0; i < objects.length; i++) {
             if (insideMask[i]) {
                 PathClass current = objects[i].getPathClass();
                 String baseName = current != null ? current.getName() : "Unclassified";
+                int originalColor = current != null ? current.getColor() : 0xFF808080;
                 // Strip existing tag suffix if present
                 if (baseName.contains(": ")) {
                     baseName = baseName.substring(0, baseName.indexOf(": "));
                 }
                 PathClass derived = PathClass.fromString(baseName + ": " + name,
-                        packedColor | 0xFF000000);
+                        originalColor);
                 objects[i].setPathClass(derived);
             }
         }
@@ -514,19 +575,13 @@ public class QuMapPane extends BorderPane {
         PopulationTag tag = new PopulationTag(name, packedColor, insideMask);
         populationTags.add(tag);
 
-        // Update QuPath hierarchy
-        var imageData = qupath.getImageData();
-        if (imageData != null) {
-            imageData.getHierarchy().fireHierarchyChangedEvent(this);
-        }
-
         // Update ring rendering
         updatePopulationRings();
 
         // Clear the polygon and restore non-tagged cells
         if (originalClasses != null) {
             for (int i = 0; i < objects.length; i++) {
-                if (!insideMask[i] && originalClasses[i] != null) {
+                if (!insideMask[i]) {
                     objects[i].setPathClass(originalClasses[i]);
                 }
             }
@@ -539,6 +594,7 @@ public class QuMapPane extends BorderPane {
         updatePhenotypeColors();
         legend.update(objects, populationTags);
 
+        var imageData = qupath.getImageData();
         if (imageData != null) {
             imageData.getHierarchy().fireHierarchyChangedEvent(this);
         }
@@ -547,6 +603,8 @@ public class QuMapPane extends BorderPane {
     }
 
     private void removePopulationTag(String tagName) {
+        if (umapResult == null) return;
+
         PopulationTag tagToRemove = null;
         for (PopulationTag tag : populationTags) {
             if (tag.name().equals(tagName)) {
@@ -673,7 +731,7 @@ public class QuMapPane extends BorderPane {
 
         if (file != null) {
             try {
-                umapResult.exportToCsv(file);
+                umapResult.exportToCsv(file, cellIndex, markerStats, populationTags);
                 statusLabel.setText("Exported to " + file.getName());
             } catch (Exception e) {
                 statusLabel.setText("Export failed: " + e.getMessage());

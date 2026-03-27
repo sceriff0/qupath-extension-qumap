@@ -10,24 +10,35 @@ import qupath.lib.roi.ROIs;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class UmapResultTest {
 
-    private static PathObject createCell(String classification) {
+    private static PathObject createCell(String classification, double markerValue) {
         var obj = PathObjects.createDetectionObject(
-                ROIs.createPointsROI(0, 0, ImagePlane.getDefaultPlane()));
+                ROIs.createPointsROI(10, 20, ImagePlane.getDefaultPlane()));
+        obj.getMeasurements().put("CD45", markerValue);
         if (classification != null) {
             obj.setPathClass(PathClass.fromString(classification));
         }
         return obj;
     }
 
+    private static CellIndex buildIndex(List<PathObject> cells, List<String> markers) {
+        return CellIndex.build(cells, markers);
+    }
+
     @Test
-    void exportToCsvHasCorrectHeader() throws IOException {
-        var obj = createCell("T-cell");
+    void exportHasFlowPathCompatibleHeader() throws IOException {
+        var obj = createCell("T-cell", 5.0);
+        var cells = List.of(obj);
+        var markers = List.of("CD45");
+        var index = buildIndex(cells, markers);
+        var stats = MarkerStats.compute(index);
+
         var result = new UmapResult(
                 new double[]{1.0}, new double[]{2.0},
                 new PathObject[]{obj}, new String[]{"CD45"},
@@ -35,15 +46,21 @@ class UmapResultTest {
 
         File temp = File.createTempFile("umap", ".csv");
         temp.deleteOnExit();
-        result.exportToCsv(temp);
+        result.exportToCsv(temp, index, stats, null);
 
         List<String> lines = Files.readAllLines(temp.toPath());
-        assertEquals("UMAP_X,UMAP_Y,Phenotype", lines.get(0));
+        assertEquals("cell_id,phenotype,population,centroid_x,centroid_y,umap_x,umap_y,CD45_raw,CD45_zscore",
+                lines.get(0));
     }
 
     @Test
-    void exportToCsvHasCorrectCoordinates() throws IOException {
-        var obj = createCell("T-cell");
+    void exportHasCorrectRowData() throws IOException {
+        var obj = createCell("T-cell", 5.0);
+        var cells = List.of(obj);
+        var markers = List.of("CD45");
+        var index = buildIndex(cells, markers);
+        var stats = MarkerStats.compute(index);
+
         var result = new UmapResult(
                 new double[]{-3.14159}, new double[]{2.71828},
                 new PathObject[]{obj}, new String[]{"CD45"},
@@ -51,27 +68,93 @@ class UmapResultTest {
 
         File temp = File.createTempFile("umap", ".csv");
         temp.deleteOnExit();
-        result.exportToCsv(temp);
+        result.exportToCsv(temp, index, stats, null);
 
         List<String> lines = Files.readAllLines(temp.toPath());
         assertEquals(2, lines.size());
-        assertTrue(lines.get(1).startsWith("-3.141590,2.718280,T-cell"));
+        String row = lines.get(1);
+        // cell_id=0, phenotype=T-cell, population=(empty), centroid, umap, marker
+        assertTrue(row.startsWith("0,T-cell,"), "Row should start with cell_id and phenotype");
+        assertTrue(row.contains("-3.1416"), "Row should contain UMAP X coordinate");
+        assertTrue(row.contains("2.7183"), "Row should contain UMAP Y coordinate");
     }
 
     @Test
     void exportUnclassifiedCells() throws IOException {
-        var obj = createCell(null); // no PathClass
+        var obj = createCell(null, 3.0);
+        var cells = List.of(obj);
+        var markers = List.of("CD45");
+        var index = buildIndex(cells, markers);
+        var stats = MarkerStats.compute(index);
+
         var result = new UmapResult(
                 new double[]{0.0}, new double[]{0.0},
-                new PathObject[]{obj}, new String[]{},
+                new PathObject[]{obj}, new String[]{"CD45"},
                 UmapParameters.defaults());
 
         File temp = File.createTempFile("umap", ".csv");
         temp.deleteOnExit();
-        result.exportToCsv(temp);
+        result.exportToCsv(temp, index, stats, null);
 
         List<String> lines = Files.readAllLines(temp.toPath());
-        assertTrue(lines.get(1).endsWith("Unclassified"));
+        assertTrue(lines.get(1).contains(",Unclassified,"));
+    }
+
+    @Test
+    void exportWithPopulationTagsSplitsPhenotype() throws IOException {
+        var obj1 = createCell("CD4+: Cluster A", 7.0);
+        var obj2 = createCell("CD8+", 2.0);
+        var cells = List.of(obj1, obj2);
+        var markers = List.of("CD45");
+        var index = buildIndex(cells, markers);
+        var stats = MarkerStats.compute(index);
+
+        var result = new UmapResult(
+                new double[]{1.0, 2.0}, new double[]{3.0, 4.0},
+                new PathObject[]{obj1, obj2}, new String[]{"CD45"},
+                UmapParameters.defaults());
+
+        var tag = new PopulationTag("Cluster A", 0xFF8800, new boolean[]{true, false});
+
+        File temp = File.createTempFile("umap", ".csv");
+        temp.deleteOnExit();
+        result.exportToCsv(temp, index, stats, List.of(tag));
+
+        List<String> lines = Files.readAllLines(temp.toPath());
+        // Header includes population column
+        assertTrue(lines.get(0).contains("population"));
+        // Cell 0: phenotype=CD4+, population=Cluster A
+        assertTrue(lines.get(1).contains(",CD4+,Cluster A,"));
+        // Cell 1: phenotype=CD8+, population=(empty)
+        assertTrue(lines.get(2).contains(",CD8+,,"));
+    }
+
+    @Test
+    void exportIncludesMarkerRawAndZscore() throws IOException {
+        var obj1 = createCell("A", 2.0);
+        var obj2 = createCell("B", 8.0);
+        var cells = List.of(obj1, obj2);
+        var markers = List.of("CD45");
+        var index = buildIndex(cells, markers);
+        var stats = MarkerStats.compute(index);
+
+        var result = new UmapResult(
+                new double[]{0.0, 1.0}, new double[]{0.0, 1.0},
+                new PathObject[]{obj1, obj2}, new String[]{"CD45"},
+                UmapParameters.defaults());
+
+        File temp = File.createTempFile("umap", ".csv");
+        temp.deleteOnExit();
+        result.exportToCsv(temp, index, stats, null);
+
+        List<String> lines = Files.readAllLines(temp.toPath());
+        // Cell 0 raw=2.0, cell 1 raw=8.0
+        assertTrue(lines.get(1).contains("2.0000"), "Row 1 should contain raw value 2.0");
+        assertTrue(lines.get(2).contains("8.0000"), "Row 2 should contain raw value 8.0");
+        // z-scores should be present (non-empty) since std > 0
+        String[] fields1 = lines.get(1).split(",");
+        String zscoreField = fields1[fields1.length - 1];
+        assertFalse(zscoreField.isEmpty(), "Z-score should not be empty when std > 0");
     }
 
     @Test

@@ -50,6 +50,8 @@ public class QuMapExtension implements QuPathExtension {
             if (quMapPane != null) {
                 quMapPane.shutdown();
             }
+            quMapPane = null;
+            stage = null;
         });
 
         stage.show();

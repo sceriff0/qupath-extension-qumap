@@ -51,20 +51,26 @@ public class MarkerStats {
             double min = Double.MAX_VALUE;
             double max = -Double.MAX_VALUE;
             double sum = 0;
+            int count = 0;
             for (int i = 0; i < n; i++) {
                 double v = raw[i];
+                if (Double.isNaN(v)) continue;
                 sum += v;
+                count++;
                 if (v < min) min = v;
                 if (v > max) max = v;
             }
-            double mean = sum / n;
+            if (count == 0) { min = 0; max = 0; }
+            double mean = count > 0 ? sum / count : 0.0;
 
             double sumSq = 0;
             for (int i = 0; i < n; i++) {
-                double d = raw[i] - mean;
+                double v = raw[i];
+                if (Double.isNaN(v)) continue;
+                double d = v - mean;
                 sumSq += d * d;
             }
-            double std = Math.sqrt(sumSq / n);
+            double std = count > 0 ? Math.sqrt(sumSq / count) : 0.0;
 
             means.put(name, mean);
             stds.put(name, std);

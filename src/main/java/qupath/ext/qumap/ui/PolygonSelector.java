@@ -53,6 +53,8 @@ public class PolygonSelector {
         if (!active) return;
 
         if (e.getClickCount() == 2) {
+            // Remove the spurious vertex added by the preceding single-click event
+            if (!vertices.isEmpty()) vertices.remove(vertices.size() - 1);
             // Complete polygon
             if (vertices.size() >= 3 && onPolygonComplete != null) {
                 onPolygonComplete.accept(new ArrayList<>(vertices));

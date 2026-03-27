@@ -66,6 +66,7 @@ public class ColorScaleLegend extends Canvas {
         double barTop = 20;
         double barBottom = h - 20;
         double barH = barBottom - barTop;
+        if (barH <= 0) return;
 
         // Draw gradient bar (top = max, bottom = min)
         for (int y = 0; y < (int) barH; y++) {
