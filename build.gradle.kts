@@ -6,7 +6,7 @@ plugins {
 qupathExtension {
     name = "FlowPath - qUMAP"
     group = "io.github.qupath"
-    version = "0.1.0"
+    version = "0.2.0"
     description = "UMAP dimensionality reduction and visualization for multiplexed imaging data."
     automaticModule = "qupath.ext.qumap"
 }
