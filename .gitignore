@@ -1,8 +1,20 @@
-build/
+# Gradle
 .gradle/
-*.class
-*.jar
+build/
 !gradle/wrapper/gradle-wrapper.jar
+
+# IDE
 .idea/
 *.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Claude
+.claude
+.planning
