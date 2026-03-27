@@ -1,4 +1,4 @@
-name: Build and Release
+name: Release
 
 on:
   push:
@@ -7,10 +7,9 @@ on:
 
 permissions:
   contents: write
-  checks: write
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,67 +23,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build and test
-        run: ./gradlew build
-
       - name: Build shadow JAR
         run: ./gradlew shadowJar
-
-      - name: Upload test results
-        uses: dorny/test-reporter@v1
-        if: always()
-        with:
-          name: Test Results
-          path: build/test-results/test/*.xml
-          reporter: java-junit
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: build/libs/*-all.jar
           generate_release_notes: true
-
-      - name: Extract version from tag
-        id: version
-        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Detect JAR filename
-        id: jar
-        run: |
-          JAR_NAME=$(basename "$(ls build/libs/*-all.jar | head -1)")
-          echo "name=$JAR_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Check catalog token
-        id: catalog_check
-        run: |
-          if [ -n "$CATALOG_PAT" ]; then
-            echo "has_token=true" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          CATALOG_PAT: ${{ secrets.CATALOG_PAT }}
-
-      - name: Update catalog
-        if: steps.catalog_check.outputs.has_token == 'true'
-        env:
-          CATALOG_PAT: ${{ secrets.CATALOG_PAT }}
-          TAG: ${{ steps.version.outputs.tag }}
-          JAR_NAME: ${{ steps.jar.outputs.name }}
-        run: |
-          git clone https://x-access-token:${CATALOG_PAT}@github.com/sceriff0/flowpath-catalog.git /tmp/catalog
-          cd /tmp/catalog
-
-          EXTENSION_NAME="FlowPath - qUMAP"
-          DOWNLOAD_URL="https://github.com/sceriff0/qupath-extension-qumap/releases/download/${TAG}/${JAR_NAME}"
-
-          NEW_RELEASE=$(jq -n --arg name "$TAG" --arg url "$DOWNLOAD_URL" \
-            '{name: $name, main_url: $url, version_range: {min: "v0.7.0"}}')
-
-          jq --arg ext "$EXTENSION_NAME" --argjson release "$NEW_RELEASE" \
-            '(.extensions[] | select(.name == $ext) | .releases) |= [$release] + .' \
-            catalog.json > catalog.tmp && mv catalog.tmp catalog.json
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add catalog.json
-          git commit -m "Add ${EXTENSION_NAME} ${TAG} to catalog"
-          git push
