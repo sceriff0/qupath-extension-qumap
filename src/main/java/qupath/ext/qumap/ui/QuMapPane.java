@@ -46,6 +46,7 @@ public class QuMapPane extends BorderPane {
     private final ProgressIndicator progressIndicator;
 
     // Controls
+    private final ComboBox<String> qualityPreset;
     private final Spinner<Integer> kSpinner;
     private final Spinner<Integer> epochsSpinner;
     private final Spinner<Double> dotSizeSpinner;
@@ -61,6 +62,9 @@ public class QuMapPane extends BorderPane {
     private final Button clearButton;
     private final Button applyTagButton;
     private final Button exportButton;
+
+    // Current preset negative samples (not exposed as spinner — controlled by preset)
+    private int negativeSamples = 3;
 
     // Marker overlay visibility
     private final SplitPane centerSplit;
@@ -82,13 +86,37 @@ public class QuMapPane extends BorderPane {
         progressIndicator.setVisible(false);
 
         // --- Controls ---
-        kSpinner = new Spinner<>(5, 50, 15, 5);
+        qualityPreset = new ComboBox<>(FXCollections.observableArrayList(
+                "Fast", "Balanced", "Quality", "Custom"));
+        qualityPreset.setValue("Fast");
+        qualityPreset.setPrefWidth(90);
+        qualityPreset.setTooltip(new Tooltip(
+                "Fast: quick preview (k=10, 50 epochs)\n" +
+                "Balanced: good quality (k=15, 100 epochs)\n" +
+                "Quality: publication-ready (k=15, 200 epochs)"));
+        qualityPreset.setOnAction(e -> applyPreset(qualityPreset.getValue()));
+
+        kSpinner = new Spinner<>(5, 50, 10, 5);
         kSpinner.setPrefWidth(70);
         kSpinner.setEditable(true);
+        kSpinner.setTooltip(new Tooltip(
+                "Number of nearest neighbors (k).\n" +
+                "Lower = faster, more local detail.\n" +
+                "Higher = slower, more global structure."));
+        kSpinner.valueProperty().addListener((obs, o, n) -> {
+            if (!applyingPreset) qualityPreset.setValue("Custom");
+        });
 
-        epochsSpinner = new Spinner<>(50, 1000, 100, 50);
+        epochsSpinner = new Spinner<>(50, 1000, 50, 50);
         epochsSpinner.setPrefWidth(80);
         epochsSpinner.setEditable(true);
+        epochsSpinner.setTooltip(new Tooltip(
+                "Optimization iterations.\n" +
+                "More = better embedding, slower.\n" +
+                "50-100 is usually enough for exploration."));
+        epochsSpinner.valueProperty().addListener((obs, o, n) -> {
+            if (!applyingPreset) qualityPreset.setValue("Custom");
+        });
 
         dotSizeSpinner = new Spinner<>(1.0, 5.0, 2.0, 0.5);
         dotSizeSpinner.setPrefWidth(65);
@@ -101,10 +129,17 @@ public class QuMapPane extends BorderPane {
         maxCellsSpinner = new Spinner<>(10000, 200000, 50000, 10000);
         maxCellsSpinner.setPrefWidth(90);
         maxCellsSpinner.setEditable(true);
+        maxCellsSpinner.setTooltip(new Tooltip(
+                "Maximum cells before subsampling kicks in.\n" +
+                "Lower = faster but less complete."));
 
         subsampleMode = new ComboBox<>(FXCollections.observableArrayList("Auto", "Off", "Fixed"));
         subsampleMode.setValue("Auto");
         subsampleMode.setPrefWidth(70);
+        subsampleMode.setTooltip(new Tooltip(
+                "Auto: subsample based on available memory.\n" +
+                "Off: use all cells (may be slow/OOM).\n" +
+                "Fixed: subsample to the Max value."));
 
         markerDropdown = new ComboBox<>();
         markerDropdown.setPromptText("-- none --");
@@ -162,6 +197,7 @@ public class QuMapPane extends BorderPane {
         // Toolbar row 1
         var row1 = new HBox(6,
                 computeButton, cancelButton, progressIndicator,
+                qualityPreset,
                 new Label("k:"), kSpinner,
                 new Label("Epochs:"), epochsSpinner,
                 new Label("Dot:"), dotSizeSpinner,
@@ -381,6 +417,37 @@ public class QuMapPane extends BorderPane {
         return candidates;
     }
 
+    // --- UMAP Presets ---
+
+    private boolean applyingPreset = false;
+
+    private void applyPreset(String preset) {
+        if (applyingPreset || "Custom".equals(preset)) return;
+        applyingPreset = true;
+        try {
+            switch (preset) {
+                case "Fast" -> {
+                    kSpinner.getValueFactory().setValue(10);
+                    epochsSpinner.getValueFactory().setValue(50);
+                    negativeSamples = 3;
+                }
+                case "Balanced" -> {
+                    kSpinner.getValueFactory().setValue(15);
+                    epochsSpinner.getValueFactory().setValue(100);
+                    negativeSamples = 5;
+                }
+                case "Quality" -> {
+                    kSpinner.getValueFactory().setValue(15);
+                    epochsSpinner.getValueFactory().setValue(200);
+                    negativeSamples = 5;
+                }
+            }
+        } finally {
+            applyingPreset = false;
+            qualityPreset.setValue(preset);
+        }
+    }
+
     // --- UMAP Computation ---
 
     private <T> void commitSpinner(Spinner<T> spinner) {
@@ -414,7 +481,8 @@ public class QuMapPane extends BorderPane {
                 kSpinner.getValue(),
                 0.1,
                 1.0,
-                epochsSpinner.getValue()
+                epochsSpinner.getValue(),
+                negativeSamples
         );
 
         int maxCells = switch (subsampleMode.getValue()) {
