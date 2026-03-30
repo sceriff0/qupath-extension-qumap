@@ -31,10 +31,14 @@ public class QuMapExtension implements QuPathExtension {
     }
 
     private void showQuMapWindow(QuPathGUI qupath) {
-        if (stage != null && stage.isShowing()) {
-            stage.toFront();
-            stage.requestFocus();
-            return;
+        if (stage != null) {
+            if (stage.isShowing()) {
+                stage.toFront();
+                stage.requestFocus();
+                return;
+            }
+            // Stage was closed but reference not yet cleared — reset it
+            stage = null;
         }
 
         quMapPane = new QuMapPane(qupath);

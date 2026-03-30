@@ -156,13 +156,15 @@ public class UmapCanvas extends Canvas {
         minX = Double.MAX_VALUE; maxX = -Double.MAX_VALUE;
         minY = Double.MAX_VALUE; maxY = -Double.MAX_VALUE;
         for (int i = 0; i < xValues.length; i++) {
-            if (!Double.isNaN(xValues[i]) && !Double.isNaN(yValues[i])) {
+            if (Double.isFinite(xValues[i]) && Double.isFinite(yValues[i])) {
                 minX = Math.min(minX, xValues[i]);
                 maxX = Math.max(maxX, xValues[i]);
                 minY = Math.min(minY, yValues[i]);
                 maxY = Math.max(maxY, yValues[i]);
             }
         }
+        // If no finite values found, use safe defaults
+        if (minX == Double.MAX_VALUE) { minX = 0; maxX = 1; minY = 0; maxY = 1; }
         if (maxX <= minX) maxX = minX + 1;
         if (maxY <= minY) maxY = minY + 1;
 

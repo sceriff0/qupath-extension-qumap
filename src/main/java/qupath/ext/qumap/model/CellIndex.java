@@ -88,12 +88,6 @@ public class CellIndex {
             }
         }
 
-        for (Map.Entry<String, Number> entry : measurements.entrySet()) {
-            if (entry.getKey().startsWith(key) && entry.getValue() != null) {
-                return entry.getValue().doubleValue();
-            }
-        }
-
         return Double.NaN;
     }
 

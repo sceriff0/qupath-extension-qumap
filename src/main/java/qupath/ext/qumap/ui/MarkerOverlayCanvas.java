@@ -64,13 +64,14 @@ public class MarkerOverlayCanvas extends Canvas {
             dataMinX = Double.MAX_VALUE; dataMaxX = -Double.MAX_VALUE;
             dataMinY = Double.MAX_VALUE; dataMaxY = -Double.MAX_VALUE;
             for (int i = 0; i < xValues.length; i++) {
-                if (!Double.isNaN(xValues[i]) && !Double.isNaN(yValues[i])) {
+                if (Double.isFinite(xValues[i]) && Double.isFinite(yValues[i])) {
                     dataMinX = Math.min(dataMinX, xValues[i]);
                     dataMaxX = Math.max(dataMaxX, xValues[i]);
                     dataMinY = Math.min(dataMinY, yValues[i]);
                     dataMaxY = Math.max(dataMaxY, yValues[i]);
                 }
             }
+            if (dataMinX == Double.MAX_VALUE) { dataMinX = 0; dataMaxX = 1; dataMinY = 0; dataMaxY = 1; }
             if (dataMaxX <= dataMinX) dataMaxX = dataMinX + 1;
             if (dataMaxY <= dataMinY) dataMaxY = dataMinY + 1;
             double padX = (dataMaxX - dataMinX) * 0.05;
@@ -90,12 +91,14 @@ public class MarkerOverlayCanvas extends Canvas {
             colorMin = Double.MAX_VALUE;
             colorMax = -Double.MAX_VALUE;
             for (double v : values) {
-                if (!Double.isNaN(v)) {
+                if (Double.isFinite(v)) {
                     colorMin = Math.min(colorMin, v);
                     colorMax = Math.max(colorMax, v);
                 }
             }
-            if (colorMax <= colorMin) colorMax = colorMin + 1;
+            // If no finite values found, use a safe default range
+            if (colorMin == Double.MAX_VALUE) { colorMin = 0; colorMax = 1; }
+            else if (colorMax <= colorMin) colorMax = colorMin + 1;
         }
         repaint();
     }

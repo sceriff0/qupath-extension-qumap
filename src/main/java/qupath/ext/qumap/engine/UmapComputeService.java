@@ -5,13 +5,16 @@ import qupath.ext.qumap.model.CellIndex;
 import qupath.ext.qumap.model.UmapParameters;
 import qupath.ext.qumap.model.UmapResult;
 import smile.manifold.UMAP;
+import smile.graph.NearestNeighborGraph;
 
 import java.util.Arrays;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.stream.IntStream;
 
 /**
  * Background UMAP computation service using SMILE.
@@ -22,6 +25,8 @@ public class UmapComputeService {
     private final ExecutorService executor;
     private volatile UmapResult cachedResult;
     private volatile Future<?> runningTask;
+    private volatile boolean cancelled;
+    private final AtomicInteger generation = new AtomicInteger(0);
 
     private volatile Consumer<UmapResult> onComplete;
     private volatile Consumer<String> onError;
@@ -48,6 +53,8 @@ public class UmapComputeService {
      */
     public void compute(CellIndex cellIndex, UmapParameters params, int maxCells) {
         cancel();
+        cancelled = false;
+        final int myGeneration = generation.incrementAndGet();
 
         runningTask = executor.submit(() -> {
             try {
@@ -73,7 +80,7 @@ public class UmapComputeService {
                     subsampled = true;
                 } else if (maxCells < 0 || estimatedBytes > freeMemory * 0.6) {
                     // Auto mode (maxCells == -1) or memory pressure
-                    int autoLimit = (int) Math.min(n, Math.max(20000,
+                    int autoLimit = (int) Math.min(n, Math.max(10000,
                             freeMemory * 0.4 / (m * 8 + params.k() * 32 + 2 * 8)));
                     if (autoLimit < n) {
                         postStatus("Auto-subsampling %,d -> %,d cells (based on available memory)..."
@@ -87,17 +94,35 @@ public class UmapComputeService {
                 // Build matrix
                 postStatus("Preparing data matrix (%,d cells x %d markers)...".formatted(computeN, m));
                 double[][] matrix;
+                double[] imputationMeans = null;
                 if (subsampled) {
-                    matrix = extractSubMatrix(cellIndex, sampleIndices);
+                    imputationMeans = new double[m];
+                    matrix = extractSubMatrix(cellIndex, sampleIndices, imputationMeans);
                 } else {
                     matrix = cellIndex.toMatrix();
                 }
 
-                // Run UMAP
-                postStatus("Computing UMAP (k=%d, epochs=%d)...".formatted(params.k(), params.epochs()));
-                var options = new UMAP.Options(params.k(), 2, params.epochs(),
+                // Clamp k to dataset size (NN-descent requires k < n)
+                int effectiveK = Math.min(params.k(), computeN - 1);
+                if (effectiveK < 2) {
+                    Platform.runLater(() -> {
+                        if (onError != null) onError.accept(
+                                "Too few cells (%d) for UMAP. Need at least %d.".formatted(computeN, params.k() + 1));
+                    });
+                    return;
+                }
+
+                // Build kNN graph (always use approximate NN-descent for speed)
+                postStatus("Building neighbor graph (k=%d)...".formatted(effectiveK));
+                NearestNeighborGraph nng = NearestNeighborGraph.descent(matrix, effectiveK);
+
+                if (cancelled) return;
+
+                // Run UMAP with pre-computed graph
+                postStatus("Optimizing layout (epochs=%d)...".formatted(params.epochs()));
+                var options = new UMAP.Options(effectiveK, 2, params.epochs(),
                         1.0, params.minDist(), params.spread(), params.negativeSamples(), 1.0, 1.0);
-                double[][] embedding = UMAP.fit(matrix, options);
+                double[][] embedding = UMAP.fit(matrix, nng, options);
 
                 // Build result arrays
                 double[] umapX = new double[n];
@@ -112,7 +137,7 @@ public class UmapComputeService {
 
                     // Project remaining cells via kNN
                     postStatus("Projecting remaining %,d cells...".formatted(n - computeN));
-                    projectRemaining(cellIndex, sampleIndices, embedding, umapX, umapY);
+                    projectRemaining(cellIndex, sampleIndices, embedding, umapX, umapY, imputationMeans);
                 } else {
                     for (int i = 0; i < n; i++) {
                         umapX[i] = embedding[i][0];
@@ -120,15 +145,16 @@ public class UmapComputeService {
                     }
                 }
 
-                if (Thread.currentThread().isInterrupted()) return;
+                if (cancelled || generation.get() != myGeneration) return;
 
                 UmapResult result = new UmapResult(umapX, umapY, cellIndex.getObjects(),
                         cellIndex.getMarkerNames(), params);
                 cachedResult = result;
 
-                if (Thread.currentThread().isInterrupted()) return;
+                if (cancelled || generation.get() != myGeneration) return;
                 Platform.runLater(() -> {
-                    if (onComplete != null) onComplete.accept(result);
+                    if (generation.get() == myGeneration && onComplete != null)
+                        onComplete.accept(result);
                 });
 
             } catch (OutOfMemoryError e) {
@@ -141,9 +167,10 @@ public class UmapComputeService {
                     }
                 });
             } catch (Exception e) {
-                if (!Thread.currentThread().isInterrupted()) {
+                if (!cancelled && generation.get() == myGeneration) {
                     Platform.runLater(() -> {
-                        if (onError != null) onError.accept("UMAP failed: " + e.getMessage());
+                        if (generation.get() == myGeneration && onError != null)
+                            onError.accept("UMAP failed: " + e.getMessage());
                     });
                 }
             }
@@ -186,12 +213,18 @@ public class UmapComputeService {
             }
         }
 
-        // Fill remaining slots randomly
+        // Fill remaining slots randomly (using seeded RNG for reproducibility)
         if (idx < targetN) {
             boolean[] used = new boolean[n];
             for (int i = 0; i < idx; i++) used[sample[i]] = true;
-            for (int i = 0; i < n && idx < targetN; i++) {
-                if (!used[i]) sample[idx++] = i;
+            // Collect unused indices and shuffle with the seeded RNG
+            var unused = new java.util.ArrayList<Integer>();
+            for (int i = 0; i < n; i++) {
+                if (!used[i]) unused.add(i);
+            }
+            java.util.Collections.shuffle(unused, rng);
+            for (int i = 0; i < unused.size() && idx < targetN; i++) {
+                sample[idx++] = unused.get(i);
             }
         }
 
@@ -199,13 +232,16 @@ public class UmapComputeService {
         return idx == targetN ? sample : Arrays.copyOf(sample, idx);
     }
 
-    private double[][] extractSubMatrix(CellIndex cellIndex, int[] indices) {
+    /**
+     * Extract sub-matrix for sampled cells, returning imputation means for reuse.
+     */
+    private double[][] extractSubMatrix(CellIndex cellIndex, int[] indices, double[] imputationMeans) {
         int m = cellIndex.getMarkerNames().length;
         double[][] matrix = new double[indices.length][m];
         for (int j = 0; j < m; j++) {
             double[] markerVals = cellIndex.getMarkerValues(j);
 
-            // Compute mean for NaN replacement
+            // Compute mean for NaN replacement from sampled cells only
             double sum = 0;
             int count = 0;
             for (int idx : indices) {
@@ -213,6 +249,7 @@ public class UmapComputeService {
                 if (!Double.isNaN(v)) { sum += v; count++; }
             }
             double mean = count > 0 ? sum / count : 0.0;
+            imputationMeans[j] = mean;
 
             for (int i = 0; i < indices.length; i++) {
                 double v = markerVals[indices[i]];
@@ -228,7 +265,8 @@ public class UmapComputeService {
      */
     private void projectRemaining(CellIndex cellIndex, int[] sampleIndices,
                                   double[][] sampleEmbedding,
-                                  double[] umapX, double[] umapY) {
+                                  double[] umapX, double[] umapY,
+                                  double[] imputationMeans) {
         int n = cellIndex.size();
         int m = cellIndex.getMarkerNames().length;
         int knn = Math.min(5, sampleIndices.length);
@@ -238,15 +276,10 @@ public class UmapComputeService {
         for (int idx : sampleIndices) isSampled[idx] = true;
 
         // Pre-fetch all marker arrays once (avoid repeated cloning)
+        // Use the same imputation means from extractSubMatrix for consistency
         double[][] allMarkerValues = new double[m][];
-        double[] markerMeans = new double[m];
         for (int j = 0; j < m; j++) {
             allMarkerValues[j] = cellIndex.getMarkerValues(j);
-            double sum = 0; int cnt = 0;
-            for (double v : allMarkerValues[j]) {
-                if (!Double.isNaN(v)) { sum += v; cnt++; }
-            }
-            markerMeans[j] = cnt > 0 ? sum / cnt : 0.0;
         }
 
         // Build sample marker matrix for kNN lookup (with NaN imputation)
@@ -254,7 +287,7 @@ public class UmapComputeService {
         for (int j = 0; j < m; j++) {
             for (int s = 0; s < sampleIndices.length; s++) {
                 double v = allMarkerValues[j][sampleIndices[s]];
-                sampleMarkers[s][j] = Double.isNaN(v) ? markerMeans[j] : v;
+                sampleMarkers[s][j] = Double.isNaN(v) ? imputationMeans[j] : v;
             }
         }
 
@@ -270,13 +303,18 @@ public class UmapComputeService {
             queryIndices[qi] = i;
             for (int j = 0; j < m; j++) {
                 double v = allMarkerValues[j][i];
-                queryVectors[qi][j] = Double.isNaN(v) ? markerMeans[j] : v;
+                queryVectors[qi][j] = Double.isNaN(v) ? imputationMeans[j] : v;
             }
             qi++;
         }
 
-        for (int q = 0; q < remaining; q++) {
-            if (Thread.currentThread().isInterrupted()) return;
+        // Parallel kNN projection — each query is independent
+        final int totalRemaining = remaining;
+        final int progressStep = Math.max(1, remaining / 10);
+        AtomicInteger progressCount = new AtomicInteger(0);
+
+        IntStream.range(0, remaining).parallel().forEach(q -> {
+            if (cancelled) return;
 
             // Find k nearest neighbors in sample
             double[] dists = new double[knn];
@@ -284,6 +322,7 @@ public class UmapComputeService {
             Arrays.fill(dists, Double.MAX_VALUE);
 
             for (int s = 0; s < sampleIndices.length; s++) {
+                if (s % 256 == 0 && cancelled) return;
                 double dist = 0;
                 for (int j = 0; j < m; j++) {
                     double d = queryVectors[q][j] - sampleMarkers[s][j];
@@ -292,8 +331,8 @@ public class UmapComputeService {
 
                 // Insert if closer than worst
                 int worstIdx = 0;
-                for (int k = 1; k < knn; k++) {
-                    if (dists[k] > dists[worstIdx]) worstIdx = k;
+                for (int ki = 1; ki < knn; ki++) {
+                    if (dists[ki] > dists[worstIdx]) worstIdx = ki;
                 }
                 if (dist < dists[worstIdx]) {
                     dists[worstIdx] = dist;
@@ -304,22 +343,23 @@ public class UmapComputeService {
             // Weighted average of neighbor embeddings
             double totalWeight = 0;
             double wx = 0, wy = 0;
-            for (int k = 0; k < knn; k++) {
-                double w = 1.0 / (Math.sqrt(dists[k]) + 1e-10);
-                wx += w * sampleEmbedding[neighbors[k]][0];
-                wy += w * sampleEmbedding[neighbors[k]][1];
+            for (int ki = 0; ki < knn; ki++) {
+                double w = 1.0 / (Math.sqrt(dists[ki]) + 1e-10);
+                wx += w * sampleEmbedding[neighbors[ki]][0];
+                wy += w * sampleEmbedding[neighbors[ki]][1];
                 totalWeight += w;
             }
             int ci = queryIndices[q];
             umapX[ci] = wx / totalWeight;
             umapY[ci] = wy / totalWeight;
 
-            // Progress update every 10%
-            if (q % (Math.max(1, remaining / 10)) == 0) {
-                int pct = (int) ((double) q / remaining * 100);
+            // Progress update every ~10%
+            int done = progressCount.incrementAndGet();
+            if (done % progressStep == 0) {
+                int pct = (int) ((double) done / totalRemaining * 100);
                 postStatus("Projecting remaining cells... %d%%".formatted(pct));
             }
-        }
+        });
     }
 
     private void postStatus(String msg) {
@@ -329,6 +369,7 @@ public class UmapComputeService {
     }
 
     public void cancel() {
+        cancelled = true;
         if (runningTask != null && !runningTask.isDone()) {
             runningTask.cancel(true);
         }

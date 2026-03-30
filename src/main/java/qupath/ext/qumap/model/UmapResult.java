@@ -97,8 +97,15 @@ public class UmapResult {
                 String population = "";
                 int sepIdx = fullLabel.lastIndexOf(": ");
                 if (hasTags && sepIdx >= 0) {
-                    phenotype = fullLabel.substring(0, sepIdx);
-                    population = fullLabel.substring(sepIdx + 2);
+                    String possibleTag = fullLabel.substring(sepIdx + 2);
+                    boolean isKnownTag = populationTags.stream()
+                            .anyMatch(t -> t.name().equals(possibleTag));
+                    if (isKnownTag) {
+                        phenotype = fullLabel.substring(0, sepIdx);
+                        population = possibleTag;
+                    } else {
+                        phenotype = fullLabel;
+                    }
                 } else {
                     phenotype = fullLabel;
                 }
@@ -122,7 +129,7 @@ public class UmapResult {
                 for (int m = 0; m < markers.length; m++) {
                     double raw = allMarkerValues[m][i];
                     double zscore;
-                    if (Double.isNaN(raw) || markerStats == null || markerStats.getStd(markers[m]) <= 1e-10) {
+                    if (Double.isNaN(raw) || markerStats == null) {
                         zscore = Double.NaN;
                     } else {
                         zscore = markerStats.toZScore(markers[m], raw);

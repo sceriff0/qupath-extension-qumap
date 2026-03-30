@@ -38,8 +38,8 @@ public class PolygonSelector {
         active = false;
         vertices.clear();
         canvas.setOnMouseClicked(e -> {
-            // Restore double-click-to-reset
-            if (e.getClickCount() == 2) canvas.resetView();
+            // Restore double-click-to-reset (matching constructor guard)
+            if (e.getClickCount() == 2 && !e.isMiddleButtonDown()) canvas.resetView();
         });
     }
 

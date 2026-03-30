@@ -65,6 +65,8 @@ public class QuMapPane extends BorderPane {
 
     // Current preset negative samples (not exposed as spinner — controlled by preset)
     private int negativeSamples = 3;
+    private javafx.beans.value.ChangeListener<ImageData<?>> imageDataListener;
+    private long computeStartTime;
 
     // Marker overlay visibility
     private final SplitPane centerSplit;
@@ -121,6 +123,7 @@ public class QuMapPane extends BorderPane {
         dotSizeSpinner = new Spinner<>(1.0, 5.0, 2.0, 0.5);
         dotSizeSpinner.setPrefWidth(65);
         dotSizeSpinner.setEditable(true);
+        dotSizeSpinner.setTooltip(new Tooltip("Size of each cell dot in the plot."));
         dotSizeSpinner.valueProperty().addListener((obs, o, n) -> {
             umapCanvas.setDotSize(n);
             markerOverlay.setDotSize(n);
@@ -144,14 +147,19 @@ public class QuMapPane extends BorderPane {
         markerDropdown = new ComboBox<>();
         markerDropdown.setPromptText("-- none --");
         markerDropdown.setPrefWidth(120);
+        markerDropdown.setTooltip(new Tooltip("Select a marker to color cells by expression level."));
         markerDropdown.setOnAction(e -> onMarkerSelected());
 
         colorScaleDropdown = new ComboBox<>(FXCollections.observableArrayList("Z-score", "Raw"));
         colorScaleDropdown.setValue("Z-score");
         colorScaleDropdown.setPrefWidth(75);
+        colorScaleDropdown.setTooltip(new Tooltip(
+                "Z-score: normalized (blue=low, red=high).\n" +
+                "Raw: actual measurement values."));
         colorScaleDropdown.setOnAction(e -> onMarkerSelected());
 
         computeButton = new Button("Compute UMAP");
+        computeButton.setTooltip(new Tooltip("Run UMAP dimensionality reduction on cell data."));
         computeButton.setOnAction(e -> runUmap());
 
         cancelButton = new Button("Cancel");
@@ -160,6 +168,7 @@ public class QuMapPane extends BorderPane {
         cancelButton.setManaged(false);
 
         drawButton = new ToggleButton("Draw Polygon");
+        drawButton.setTooltip(new Tooltip("Click to draw a polygon gate on the UMAP plot.\nClick points to create vertices, close the shape to finish."));
         drawButton.setOnAction(e -> {
             if (drawButton.isSelected()) {
                 polygonSelector.activate();
@@ -169,6 +178,7 @@ public class QuMapPane extends BorderPane {
         });
 
         clearButton = new Button("Clear Shape");
+        clearButton.setTooltip(new Tooltip("Remove polygon gate and restore all cell classes. (Esc)"));
         clearButton.setOnAction(e -> clearPolygon());
 
         tagNameField = new TextField();
@@ -179,9 +189,11 @@ public class QuMapPane extends BorderPane {
         tagColorPicker.setPrefWidth(50);
 
         applyTagButton = new Button("Apply Tag");
+        applyTagButton.setTooltip(new Tooltip("Label gated cells with the population name.\nCells are tagged in QuPath's hierarchy."));
         applyTagButton.setOnAction(e -> applyPopulationTag());
 
         exportButton = new Button("Export CSV");
+        exportButton.setTooltip(new Tooltip("Export UMAP coordinates and marker data to CSV. (Ctrl+E)"));
         exportButton.setOnAction(e -> exportCsv());
 
         // Disable gating/tag/export controls until UMAP is computed
@@ -257,9 +269,8 @@ public class QuMapPane extends BorderPane {
         legend.setOnPopulationRemove(this::removePopulationTag);
 
         // --- Listen for image changes ---
-        qupath.imageDataProperty().addListener((obs, oldImg, newImg) -> {
-            Platform.runLater(this::initializeFromImage);
-        });
+        imageDataListener = (obs, oldImg, newImg) -> Platform.runLater(this::initializeFromImage);
+        qupath.imageDataProperty().addListener(imageDataListener);
 
         // --- Keyboard shortcuts ---
         setOnKeyPressed(e -> {
@@ -443,8 +454,8 @@ public class QuMapPane extends BorderPane {
                 }
             }
         } finally {
-            applyingPreset = false;
             qualityPreset.setValue(preset);
+            applyingPreset = false;
         }
     }
 
@@ -505,6 +516,7 @@ public class QuMapPane extends BorderPane {
         cancelButton.setVisible(true);
         cancelButton.setManaged(true);
         progressIndicator.setVisible(true);
+        computeStartTime = System.currentTimeMillis();
         statusLabel.setText("Computing UMAP...");
 
         computeService.compute(cellIndex, params, maxCells);
@@ -540,8 +552,11 @@ public class QuMapPane extends BorderPane {
         updatePhenotypeColors();
         legend.update(result.getObjects(), populationTags);
 
-        statusLabel.setText(String.format("UMAP computed: %,d cells (k=%d)",
-                result.size(), result.getParams().k()));
+        long elapsed = System.currentTimeMillis() - computeStartTime;
+        String timeStr = elapsed < 1000 ? "%dms".formatted(elapsed)
+                : "%.1fs".formatted(elapsed / 1000.0);
+        statusLabel.setText(String.format("UMAP computed: %,d cells (k=%d) in %s",
+                result.size(), result.getParams().k(), timeStr));
     }
 
     private void onUmapError(String message) {
@@ -873,5 +888,8 @@ public class QuMapPane extends BorderPane {
 
     public void shutdown() {
         computeService.shutdown();
+        if (imageDataListener != null) {
+            qupath.imageDataProperty().removeListener(imageDataListener);
+        }
     }
 }

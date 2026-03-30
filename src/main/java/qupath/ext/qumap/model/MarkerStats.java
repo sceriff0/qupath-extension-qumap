@@ -54,7 +54,7 @@ public class MarkerStats {
             int count = 0;
             for (int i = 0; i < n; i++) {
                 double v = raw[i];
-                if (Double.isNaN(v)) continue;
+                if (!Double.isFinite(v)) continue;
                 sum += v;
                 count++;
                 if (v < min) min = v;
@@ -66,7 +66,7 @@ public class MarkerStats {
             double sumSq = 0;
             for (int i = 0; i < n; i++) {
                 double v = raw[i];
-                if (Double.isNaN(v)) continue;
+                if (!Double.isFinite(v)) continue;
                 double d = v - mean;
                 sumSq += d * d;
             }
