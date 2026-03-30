@@ -13,7 +13,7 @@ class UmapParametersTest {
         assertEquals(15, params.k());
         assertEquals(0.1, params.minDist(), 0.001);
         assertEquals(1.0, params.spread(), 0.001);
-        assertEquals(200, params.epochs());
+        assertEquals(100, params.epochs());
     }
 
     @Test
