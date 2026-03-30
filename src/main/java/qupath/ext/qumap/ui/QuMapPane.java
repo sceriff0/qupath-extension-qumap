@@ -56,6 +56,7 @@ public class QuMapPane extends BorderPane {
     private final TextField tagNameField;
     private final ColorPicker tagColorPicker;
     private final Button computeButton;
+    private final Button cancelButton;
     private final ToggleButton drawButton;
     private final Button clearButton;
     private final Button applyTagButton;
@@ -85,7 +86,7 @@ public class QuMapPane extends BorderPane {
         kSpinner.setPrefWidth(70);
         kSpinner.setEditable(true);
 
-        epochsSpinner = new Spinner<>(50, 1000, 200, 50);
+        epochsSpinner = new Spinner<>(50, 1000, 100, 50);
         epochsSpinner.setPrefWidth(80);
         epochsSpinner.setEditable(true);
 
@@ -117,6 +118,11 @@ public class QuMapPane extends BorderPane {
 
         computeButton = new Button("Compute UMAP");
         computeButton.setOnAction(e -> runUmap());
+
+        cancelButton = new Button("Cancel");
+        cancelButton.setOnAction(e -> cancelUmap());
+        cancelButton.setVisible(false);
+        cancelButton.setManaged(false);
 
         drawButton = new ToggleButton("Draw Polygon");
         drawButton.setOnAction(e -> {
@@ -155,7 +161,7 @@ public class QuMapPane extends BorderPane {
 
         // Toolbar row 1
         var row1 = new HBox(6,
-                computeButton, progressIndicator,
+                computeButton, cancelButton, progressIndicator,
                 new Label("k:"), kSpinner,
                 new Label("Epochs:"), epochsSpinner,
                 new Label("Dot:"), dotSizeSpinner,
@@ -428,15 +434,28 @@ public class QuMapPane extends BorderPane {
         }
 
         computeButton.setDisable(true);
+        cancelButton.setVisible(true);
+        cancelButton.setManaged(true);
         progressIndicator.setVisible(true);
         statusLabel.setText("Computing UMAP...");
 
         computeService.compute(cellIndex, params, maxCells);
     }
 
+    private void cancelUmap() {
+        computeService.cancel();
+        computeButton.setDisable(false);
+        cancelButton.setVisible(false);
+        cancelButton.setManaged(false);
+        progressIndicator.setVisible(false);
+        statusLabel.setText("UMAP cancelled");
+    }
+
     private void onUmapComplete(UmapResult result) {
         this.umapResult = result;
         computeButton.setDisable(false);
+        cancelButton.setVisible(false);
+        cancelButton.setManaged(false);
         progressIndicator.setVisible(false);
 
         // Enable gating and export controls
@@ -459,6 +478,8 @@ public class QuMapPane extends BorderPane {
 
     private void onUmapError(String message) {
         computeButton.setDisable(false);
+        cancelButton.setVisible(false);
+        cancelButton.setManaged(false);
         progressIndicator.setVisible(false);
         statusLabel.setText("Error: " + message);
 
